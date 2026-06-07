@@ -1,4 +1,3 @@
-```python
 from agent import analyze_ticker
 
 def main():
