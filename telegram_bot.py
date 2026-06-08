@@ -1,181 +1,3 @@
-"""Minimal Telegram bot for the investment-agent MVP."""
-
-from __future__ import annotations
-
-import asyncio
-import os
-from collections.abc import Callable
-
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.filters import Command, CommandStart
-from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
-
-from agent import (
-    analyze_ticker,
-    format_full_for_telegram,
-    format_for_telegram,
-    format_idea_for_telegram,
-    format_news_for_telegram,
-    format_risks_for_telegram,
-    normalize_user_ticker_input,
-)
-
-
-router = Router()
-pending_actions_by_user: dict[int, str] = {}
-action_formatters: dict[str, Callable[[dict[str, str | None]], str]] = {
-    "news": format_news_for_telegram,
-    "risks": format_risks_for_telegram,
-    "idea": format_idea_for_telegram,
-    "full": format_full_for_telegram,
-}
-
-
-def get_telegram_bot_token() -> str:
-    """Reads the Telegram bot token from environment variables."""
-
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-
-    if not token:
-        raise SystemExit(
-            "Переменная окружения TELEGRAM_BOT_TOKEN не задана. "
-            "Укажите токен бота перед запуском."
-        )
-
-    return token
-
-
-def get_main_reply_keyboard() -> ReplyKeyboardMarkup:
-    """Builds the main reply keyboard for the bot."""
-
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📊 Анализ"), KeyboardButton(text="📰 Новости")],
-            [KeyboardButton(text="⚠️ Риски"), KeyboardButton(text="💡 Идея")],
-        ],
-        resize_keyboard=True,
-    )
-
-
-def extract_message_text(message: Message) -> str:
-    """Extracts and trims plain user text from a Telegram message."""
-
-    return (message.text or "").strip()
-
-
-def extract_command_argument(message: Message) -> str:
-    """Extracts the argument part that goes after a bot command."""
-
-    text = extract_message_text(message)
-    parts = text.split(maxsplit=1)
-
-    if len(parts) < 2:
-        return ""
-
-    return parts[1].strip()
-
-
-def get_message_user_id(message: Message) -> int | None:
-    """Returns the Telegram user id when it is available."""
-
-    if message.from_user is None:
-        return None
-
-    return message.from_user.id
-
-
-def set_pending_action(message: Message, action: str) -> None:
-    """Stores the next expected action for the current user."""
-
-    user_id = get_message_user_id(message)
-    if user_id is None:
-        return
-
-    pending_actions_by_user[user_id] = action
-
-
-def get_pending_action(message: Message) -> str | None:
-    """Returns the pending action for the current user, if any."""
-
-    user_id = get_message_user_id(message)
-    if user_id is None:
-        return None
-
-    return pending_actions_by_user.get(user_id)
-
-
-def clear_pending_action(message: Message) -> None:
-    """Clears the pending action for the current user."""
-
-    user_id = get_message_user_id(message)
-    if user_id is None:
-        return
-
-    pending_actions_by_user.pop(user_id, None)
-
-
-async def _handle_command_analysis_request(
-    message: Message,
-    raw_ticker: str,
-    formatter,
-) -> None:
-    """Runs analysis for a command handler and sends the formatted response."""
-
-    await message.answer("Смотрю данные по бумаге, секунду...")
-
-    try:
-        normalized_ticker = normalize_user_ticker_input(raw_ticker)
-        result = analyze_ticker(normalized_ticker)
-        reply = formatter(result)
-    except Exception as error:
-        reply = f"Не удалось обработать запрос: {error}"
-
-    await message.answer(reply)
-
-
-@router.message(CommandStart())
-async def handle_start(message: Message) -> None:
-    """Sends a short start instruction to the user."""
-
-    await message.answer(
-        "Привет! Я твой личный бот Владимир для анализа акций 📊\n\n"
-        "Помогаю быстро понять, что сейчас происходит с бумагой без лишнего шума.\n\n"
-        "Что я умею:\n"
-        "• анализирую акции по тикеру или названию (SBER, сбер, gazp и т.д.)\n"
-        "• показываю краткий разбор по бумаге\n"
-        "• выделяю риски и ключевые новости\n"
-        "• даю ориентир по горизонту: краткосрок / средний / долгий срок\n\n"
-        "Что нового:\n"
-        "• можно использовать команды без тикера (например, /idea → потом просто отправить SBER)\n"
-        "• добавлены режимы:\n"
-        "  /news — важные новости\n"
-        "  /risks — риски по бумаге\n"
-        "  /idea — краткая идея по бумаге\n\n"
-        "Как пользоваться:\n"
-        "Просто отправь тикер:\n"
-        "SBER\n\n"
-        "или используй команды:\n"
-        "/news SBER\n"
-        "/risks SBER\n"
-        "/idea SBER\n\n"
-        "Если есть идеи по улучшению — пиши @Arinocka_g",
-        reply_markup=get_main_reply_keyboard(),
-    )
-
-
-@router.message(Command("help"))
-async def handle_help(message: Message) -> None:
-    """Sends a short help message with available bot commands."""
-
-    await message.answer(
-        "Как пользоваться ботом:\n\n"
-        "Отправьте тикер или название бумаги:\n"
-        "SBER или сбер\n\n"
-        "Доступные команды:\n"
-        "/news SBER — важные новости\n"
-        "/risks SBER — риски по бумаге\n"
-        "/idea SBER — краткая идея\n"
-        "/full SBER — подробный разбор\n\n"
         "Пример:\n"
         "/idea SBER\n\n"
         "Если есть идеи по улучшению — пишите @Arinocka_g",
@@ -221,6 +43,21 @@ async def handle_idea_button(message: Message) -> None:
     await message.answer(
         "Напишите тикер или название бумаги для идеи по бумаге, например: SBER или сбер"
     )
+
+
+@router.message(F.text == "📈 Идеи дня")
+async def handle_today_button(message: Message) -> None:
+    """Handles the reply-keyboard button for daily ideas."""
+
+    clear_pending_action(message)
+    await message.answer("Смотрю идеи дня по списку бумаг, секунду...")
+
+    try:
+        reply = build_today_ideas_message()
+    except Exception as error:
+        reply = f"Не удалось собрать идеи дня: {error}"
+
+    await message.answer(reply)
 
 
 @router.message(Command("news"))
@@ -285,6 +122,21 @@ async def handle_full_command(message: Message) -> None:
 
     clear_pending_action(message)
     await _handle_command_analysis_request(message, raw_ticker, format_full_for_telegram)
+
+
+@router.message(Command("today"))
+async def handle_today_command(message: Message) -> None:
+    """Handles the /today command."""
+
+    clear_pending_action(message)
+    await message.answer("Смотрю идеи дня по списку бумаг, секунду...")
+
+    try:
+        reply = build_today_ideas_message()
+    except Exception as error:
+        reply = f"Не удалось собрать идеи дня: {error}"
+
+    await message.answer(reply)
 
 
 @router.message()
