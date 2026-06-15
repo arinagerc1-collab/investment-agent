@@ -164,11 +164,7 @@ def build_today_ideas_message() -> str:
         try:
             result = analyze_ticker(ticker)
 
-            summary = (
-                result.get("summary")
-                or result.get("analysis")
-                or "Анализ получен."
-            )
+            summary = ( result.get("analysis_text") or result.get("summary") or result.get("analysis") or "Не удалось получить текст анализа." ) summary = str(summary)[:700]
 
             lines.extend(
                 [
