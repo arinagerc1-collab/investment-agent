@@ -10,8 +10,8 @@ import urllib.request
 import urllib.error
 
 
-# Moscow timezone offset = UTC+3
-MOSCOW_UTC_OFFSET = 3
+# Moscow timezone offset = UTC+5
+MOSCOW_UTC_OFFSET = 5
 
 # Время рассылки — 09:00 по Москве
 SEND_HOUR_MOSCOW = 9
