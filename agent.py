@@ -178,9 +178,7 @@ def build_today_ideas_message() -> str:
             })
 
     llm_result = build_llm_today_ideas(tickers_data)
-    return screener_summary + "
-
-" + llm_result + DISCLAIMER
+    return screener_summary + "\n\n" + llm_result + DISCLAIMER
 
 
 # ─────────────────────────────────────────────
