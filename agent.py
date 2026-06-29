@@ -1,4 +1,4 @@
-          """Core logic for generating a user-friendly stock analysis."""
+"""Core logic for generating a user-friendly stock analysis."""
 
 import re
 from typing import TypedDict
