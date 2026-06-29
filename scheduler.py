@@ -1,129 +1,156 @@
-"""Morning digest scheduler — sends daily ideas at 09:00 Perm time."""
+"""Smart screener — filters all tickers by momentum before LLM analysis."""
 
 from __future__ import annotations
 
-import asyncio
-import datetime
-import json
-import os
 import urllib.request
+import urllib.error
+import json
 
 
-# Perm timezone offset = UTC+5
-PERM_UTC_OFFSET = 5
-
-SEND_HOUR = 9
-SEND_MINUTE = 0
-
-SUBSCRIBER_IDS = [
-    1727749857,
+ALL_TICKERS = [
+    # Банки
+    "SBER", "VTBR", "TCSG", "BSPB",
+    # Нефть и газ
+    "LKOH", "GAZP", "ROSN", "NVTK", "TATN", "SNGS",
+    # Металлы
+    "GMKN", "NLMK", "MAGN", "CHMF", "ALRS",
+    # Технологии
+    "YNDX", "OZON", "VKCO",
+    # Другие
+    "MTSS", "AFLT", "PIKK", "FEES",
 ]
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
-DEEPSEEK_MODEL = "deepseek-chat"
+MOEX_URL = (
+    "https://iss.moex.com/iss/engines/stock/markets/shares"
+    "/securities.json?iss.meta=off&iss.only=marketdata"
+    "&marketdata.columns=SECID,LAST,CHANGE,LASTTOPREVPRICE"
+)
+
+TIMEOUT = 20
 
 
-def _now_perm() -> datetime.datetime:
-    utc_now = datetime.datetime.utcnow()
-    return utc_now + datetime.timedelta(hours=PERM_UTC_OFFSET)
-
-
-def _seconds_until_next_send() -> float:
-    now = _now_perm()
-    target = now.replace(hour=SEND_HOUR, minute=SEND_MINUTE, second=0, microsecond=0)
-    if now >= target:
-        target += datetime.timedelta(days=1)
-    return (target - now).total_seconds()
-
-
-def _build_affirmation() -> str:
-    if not DEEPSEEK_API_KEY:
-        return "Сегодня ты притягиваешь изобилие своей уверенностью. Вселенная уже движется тебе навстречу."
-
-    today = _now_perm().strftime("%d.%m.%Y")
-
-    system_text = (
-        "Ты — вдохновляющий коуч в стиле книги и фильма Тайна (The Secret). "
-        "Ты веришь в закон притяжения, силу мысли и то что вселенная отвечает на наши желания. "
-        "Пиши тепло, с верой и энергией. Без markdown, только обычный текст и эмодзи."
-    )
-
-    user_text = (
-        "Напиши одну уникальную аффирмацию на сегодня " + today + " "
-        "для мужчины который инвестирует деньги и строит финансовую свободу. "
-        "В стиле Тайны — про притяжение богатства, изобилие, силу намерения. "
-        "Обращайся в мужском роде — ты готов, ты притягиваешь, твои мысли. "
-        "2-3 предложения максимум. Начни с обращения Сегодня."
-    )
-
-    payload = {
-        "model": DEEPSEEK_MODEL,
-        "messages": [
-            {"role": "system", "content": system_text},
-            {"role": "user", "content": user_text},
-        ],
-        "temperature": 0.9,
-        "max_tokens": 150,
-    }
-
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        DEEPSEEK_API_URL,
-        data=data,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + DEEPSEEK_API_KEY,
-        },
-        method="POST",
-    )
+def _fetch_moex_snapshot() -> dict[str, dict]:
+    """Fetches current price and daily change for all tickers from MOEX."""
+    result: dict[str, dict] = {}
 
     try:
-        with urllib.request.urlopen(req, timeout=20) as response:
-            result = json.loads(response.read().decode("utf-8"))
-            return result["choices"][0]["message"]["content"].strip()
-    except Exception:
-        return "Сегодня ты притягиваешь изобилие своей уверенностью. Вселенная уже движется тебе навстречу."
-
-
-async def send_morning_digest(bot) -> None:
-    from agent import build_today_ideas_message
-
-    now = _now_perm()
-    date_str = now.strftime("%d.%m.%Y")
-    affirmation = _build_affirmation()
-
-    try:
-        ideas = build_today_ideas_message()
-    except Exception as e:
-        ideas = "Не удалось собрать идеи дня: " + str(e)
-
-    full_text = (
-        "🌅 Доброе утро! " + date_str + "\n\n"
-        "✨ Аффирмация дня:\n" + affirmation + "\n\n"
-        "────────────────────\n\n"
-        + ideas
-    )
-
-    for user_id in SUBSCRIBER_IDS:
-        try:
-            await bot.send_message(user_id, full_text)
-        except Exception as e:
-            print("Ошибка отправки дайджеста пользователю " + str(user_id) + ": " + str(e))
-
-
-async def run_morning_scheduler(bot) -> None:
-    print("Планировщик утренней рассылки запущен.")
-
-    while True:
-        seconds = _seconds_until_next_send()
-        now_perm = _now_perm()
-        send_at = now_perm + datetime.timedelta(seconds=seconds)
-        print(
-            "Следующая рассылка в "
-            + send_at.strftime("%d.%m.%Y %H:%M")
-            + " по Перми"
+        req = urllib.request.Request(
+            MOEX_URL,
+            headers={"User-Agent": "Mozilla/5.0"},
         )
-        await asyncio.sleep(seconds)
-        await send_morning_digest(bot)
-        await asyncio.sleep(60)
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as response:
+            data = json.loads(response.read().decode("utf-8"))
+
+        columns = data["marketdata"]["columns"]
+        rows = data["marketdata"]["data"]
+
+        idx_secid = columns.index("SECID")
+        idx_last = columns.index("LAST")
+        idx_change = columns.index("CHANGE")
+        idx_pct = columns.index("LASTTOPREVPRICE")
+
+        for row in rows:
+            secid = row[idx_secid]
+            if secid not in ALL_TICKERS:
+                continue
+
+            last = row[idx_last]
+            change = row[idx_change]
+            pct = row[idx_pct]
+
+            result[secid] = {
+                "price": last,
+                "change": change,
+                "change_pct": pct,
+            }
+
+    except Exception as e:
+        print("Ошибка получения данных MOEX: " + str(e))
+
+    return result
+
+
+def _score_ticker(ticker: str, data: dict) -> float:
+    """
+    Scores a ticker for today's idea selection.
+    Higher = more interesting signal.
+    Uses daily change % as primary signal.
+    Positive momentum preferred but strong negative also flagged.
+    """
+    pct = data.get("change_pct")
+    if pct is None:
+        return 0.0
+
+    try:
+        pct_float = float(pct)
+    except (TypeError, ValueError):
+        return 0.0
+
+    # Сильный рост — высокий балл
+    if pct_float > 0:
+        return pct_float * 1.5
+
+    # Сильное падение тоже интересно (возможный отскок)
+    if pct_float < -2.0:
+        return abs(pct_float) * 0.8
+
+    return abs(pct_float) * 0.3
+
+
+def get_top_tickers(limit: int = 5) -> list[dict]:
+    """
+    Returns top N tickers by momentum signal with price data.
+    Falls back to default list if MOEX is unavailable.
+    """
+    snapshot = _fetch_moex_snapshot()
+
+    if not snapshot:
+        # Fallback — возвращаем дефолтный список без цен
+        return [
+            {"ticker": t, "price": None, "change_pct": None, "score": 0}
+            for t in ALL_TICKERS[:limit]
+        ]
+
+    scored = []
+    for ticker in ALL_TICKERS:
+        if ticker not in snapshot:
+            continue
+
+        data = snapshot[ticker]
+        score = _score_ticker(ticker, data)
+
+        scored.append({
+            "ticker": ticker,
+            "price": data.get("price"),
+            "change_pct": data.get("change_pct"),
+            "score": score,
+        })
+
+    # Сортируем по баллу
+    scored.sort(key=lambda x: x["score"], reverse=True)
+
+    return scored[:limit]
+
+
+def format_screener_summary(top: list[dict]) -> str:
+    """Builds a short text summary of screener results."""
+    if not top:
+        return "Скринер не вернул данные."
+
+    lines = ["📡 Скринер отобрал топ-" + str(len(top)) + " бумаг:"]
+    for item in top:
+        ticker = item["ticker"]
+        price = item["price"]
+        pct = item["change_pct"]
+
+        price_str = (str(round(float(price), 2)) + " руб.") if price else "—"
+        pct_str = ""
+        if pct is not None:
+            try:
+                pct_str = (" (" + ("+" if float(pct) >= 0 else "") + str(round(float(pct), 1)) + "%)")
+            except Exception:
+                pass
+
+        lines.append("• " + ticker + ": " + price_str + pct_str)
+
+    return "\n".join(lines)
