@@ -149,12 +149,22 @@ def format_full_for_telegram(result: dict[str, str | None]) -> str:
 
 
 def build_today_ideas_message() -> str:
-    """Идеи дня через LLM для нескольких тикеров."""
+    """Идеи дня — скринер отбирает топ-5 из 22 тикеров, LLM анализирует."""
+    from screener import get_top_tickers, format_screener_summary
 
-    tickers = ["SBER", "LKOH", "GAZP", "VTBR", "ROSN"]
+    try:
+        top_tickers = get_top_tickers(limit=5)
+    except Exception:
+        top_tickers = [
+            {"ticker": t, "price": None, "change_pct": None}
+            for t in ["SBER", "LKOH", "GAZP", "VTBR", "ROSN"]
+        ]
+
+    screener_summary = format_screener_summary(top_tickers)
+
     tickers_data = []
-
-    for ticker in tickers:
+    for item in top_tickers:
+        ticker = item["ticker"]
         try:
             result = analyze_ticker(ticker)
             tickers_data.append({
@@ -164,10 +174,13 @@ def build_today_ideas_message() -> str:
         except Exception as e:
             tickers_data.append({
                 "ticker": ticker,
-                "raw_analysis": f"Ошибка: {e}",
+                "raw_analysis": "Ошибка: " + str(e),
             })
 
-    return build_llm_today_ideas(tickers_data) + DISCLAIMER
+    llm_result = build_llm_today_ideas(tickers_data)
+    return screener_summary + "
+
+" + llm_result + DISCLAIMER
 
 
 # ─────────────────────────────────────────────
