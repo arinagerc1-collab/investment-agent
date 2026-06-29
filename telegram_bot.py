@@ -18,6 +18,7 @@ from agent import (
     format_idea_for_telegram,
     format_full_for_telegram,
     normalize_user_ticker_input,
+    build_today_ideas_message,
 )
 
 router = Router()
@@ -76,7 +77,6 @@ def extract_command_argument(message: Message) -> str:
     """Extracts command argument."""
 
     text = extract_message_text(message)
-
     parts = text.split(maxsplit=1)
 
     if len(parts) < 2:
@@ -138,64 +138,12 @@ async def _handle_command_analysis_request(
 
     try:
         normalized_ticker = normalize_user_ticker_input(raw_ticker)
-
         result = analyze_ticker(normalized_ticker)
-
         reply = formatter(result)
-
     except Exception as error:
         reply = f"Не удалось обработать запрос: {error}"
 
     await message.answer(reply)
-
-
-def build_today_ideas_message() -> str:
-    """Builds a simple ideas-of-the-day message."""
-
-    tickers = ["SBER", "LKOH", "GAZP"]
-
-    lines = [
-        "📈 Идеи дня",
-        "",
-    ]
-
-    for index, ticker in enumerate(tickers, start=1):
-
-        try:
-            result = analyze_ticker(ticker)
-
-            summary = ( result.get("analysis_text") 
-            or result.get("summary") 
-            or result.get("analysis") 
-            or "Не удалось получить текст анализа." 
-            ) 
-            
-            summary = str(summary)[:700]
-
-            lines.extend(
-                [
-                    f"{index}. {ticker}",
-                    "Кратко:",
-                    str(summary),
-                    "",
-                ]
-            )
-
-        except Exception as error:
-
-            lines.extend(
-                [
-                    f"{index}. {ticker}",
-                    f"Ошибка анализа: {error}",
-                    "",
-                ]
-            )
-
-    lines.append(
-        "⚠ Не является индивидуальной инвестиционной рекомендацией."
-    )
-
-    return "\n".join(lines)
 
 
 @router.message(CommandStart())
@@ -241,10 +189,7 @@ async def handle_analysis_button(message: Message) -> None:
     """Handles analysis button."""
 
     clear_pending_action(message)
-
-    await message.answer(
-        "Напишите тикер, например: SBER"
-    )
+    await message.answer("Напишите тикер, например: SBER")
 
 
 @router.message(F.text == "📰 Новости")
@@ -252,10 +197,7 @@ async def handle_news_button(message: Message) -> None:
     """Handles news button."""
 
     set_pending_action(message, "news")
-
-    await message.answer(
-        "Напишите тикер для новостей, например: SBER"
-    )
+    await message.answer("Напишите тикер для новостей, например: SBER")
 
 
 @router.message(F.text == "⚠️ Риски")
@@ -263,10 +205,7 @@ async def handle_risks_button(message: Message) -> None:
     """Handles risks button."""
 
     set_pending_action(message, "risks")
-
-    await message.answer(
-        "Напишите тикер для анализа рисков, например: SBER"
-    )
+    await message.answer("Напишите тикер для анализа рисков, например: SBER")
 
 
 @router.message(F.text == "💡 Идея")
@@ -274,10 +213,7 @@ async def handle_idea_button(message: Message) -> None:
     """Handles idea button."""
 
     set_pending_action(message, "idea")
-
-    await message.answer(
-        "Напишите тикер для идеи, например: SBER"
-    )
+    await message.answer("Напишите тикер для идеи, например: SBER")
 
 
 @router.message(F.text == "📈 Идеи дня")
@@ -285,14 +221,10 @@ async def handle_today_button(message: Message) -> None:
     """Handles ideas button."""
 
     clear_pending_action(message)
-
-    await message.answer(
-        "Смотрю идеи дня по списку бумаг..."
-    )
+    await message.answer("Смотрю идеи дня по списку бумаг...")
 
     try:
         reply = build_today_ideas_message()
-
     except Exception as error:
         reply = f"Ошибка: {error}"
 
@@ -306,21 +238,13 @@ async def handle_news_command(message: Message) -> None:
     raw_ticker = extract_command_argument(message)
 
     if not raw_ticker:
-
         set_pending_action(message, "news")
-
-        await message.answer(
-            "Напишите тикер после /news"
-        )
-
+        await message.answer("Напишите тикер после /news")
         return
 
     clear_pending_action(message)
-
     await _handle_command_analysis_request(
-        message,
-        raw_ticker,
-        format_news_for_telegram,
+        message, raw_ticker, format_news_for_telegram,
     )
 
 
@@ -331,21 +255,13 @@ async def handle_risks_command(message: Message) -> None:
     raw_ticker = extract_command_argument(message)
 
     if not raw_ticker:
-
         set_pending_action(message, "risks")
-
-        await message.answer(
-            "Напишите тикер после /risks"
-        )
-
+        await message.answer("Напишите тикер после /risks")
         return
 
     clear_pending_action(message)
-
     await _handle_command_analysis_request(
-        message,
-        raw_ticker,
-        format_risks_for_telegram,
+        message, raw_ticker, format_risks_for_telegram,
     )
 
 
@@ -356,21 +272,13 @@ async def handle_idea_command(message: Message) -> None:
     raw_ticker = extract_command_argument(message)
 
     if not raw_ticker:
-
         set_pending_action(message, "idea")
-
-        await message.answer(
-            "Напишите тикер после /idea"
-        )
-
+        await message.answer("Напишите тикер после /idea")
         return
 
     clear_pending_action(message)
-
     await _handle_command_analysis_request(
-        message,
-        raw_ticker,
-        format_idea_for_telegram,
+        message, raw_ticker, format_idea_for_telegram,
     )
 
 
@@ -381,21 +289,13 @@ async def handle_full_command(message: Message) -> None:
     raw_ticker = extract_command_argument(message)
 
     if not raw_ticker:
-
         set_pending_action(message, "full")
-
-        await message.answer(
-            "Напишите тикер после /full"
-        )
-
+        await message.answer("Напишите тикер после /full")
         return
 
     clear_pending_action(message)
-
     await _handle_command_analysis_request(
-        message,
-        raw_ticker,
-        format_full_for_telegram,
+        message, raw_ticker, format_full_for_telegram,
     )
 
 
@@ -404,14 +304,10 @@ async def handle_today_command(message: Message) -> None:
     """Handles /today."""
 
     clear_pending_action(message)
-
-    await message.answer(
-        "Смотрю идеи дня по списку бумаг..."
-    )
+    await message.answer("Смотрю идеи дня по списку бумаг...")
 
     try:
         reply = build_today_ideas_message()
-
     except Exception as error:
         reply = f"Ошибка: {error}"
 
@@ -425,36 +321,23 @@ async def handle_ticker_message(message: Message) -> None:
     user_text = extract_message_text(message)
 
     if not user_text:
-
-        await message.answer(
-            "Пожалуйста, отправьте тикер, например SBER."
-        )
-
+        await message.answer("Пожалуйста, отправьте тикер, например SBER.")
         return
 
     pending_action = get_pending_action(message)
-
     formatter = format_for_telegram
 
     if pending_action and pending_action in action_formatters:
         formatter = action_formatters[pending_action]
 
-    await message.answer(
-        "Смотрю данные по бумаге, секунду..."
-    )
+    await message.answer("Смотрю данные по бумаге, секунду...")
 
     try:
-        normalized_ticker = normalize_user_ticker_input(
-            user_text
-        )
-
+        normalized_ticker = normalize_user_ticker_input(user_text)
         result = analyze_ticker(normalized_ticker)
-
         reply = formatter(result)
-
     except Exception as error:
         reply = f"Не удалось обработать запрос: {error}"
-
     finally:
         if pending_action:
             clear_pending_action(message)
@@ -466,11 +349,8 @@ async def main() -> None:
     """Starts bot polling."""
 
     bot = Bot(token=get_telegram_bot_token())
-
     dispatcher = Dispatcher()
-
     dispatcher.include_router(router)
-
     await dispatcher.start_polling(bot)
 
 
