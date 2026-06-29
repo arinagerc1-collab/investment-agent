@@ -314,6 +314,19 @@ async def handle_today_command(message: Message) -> None:
     await message.answer(reply)
 
 
+@router.message(Command("morning"))
+async def handle_morning_command(message: Message) -> None:
+    """Handles /morning — sends morning digest right now for testing."""
+    from scheduler import send_morning_digest
+
+    await message.answer("Отправляю утренний дайджест...")
+
+    try:
+        await send_morning_digest(message.bot)
+    except Exception as error:
+        await message.answer(f"Ошибка: {error}")
+
+
 @router.message()
 async def handle_ticker_message(message: Message) -> None:
     """Handles ticker message."""
@@ -346,12 +359,18 @@ async def handle_ticker_message(message: Message) -> None:
 
 
 async def main() -> None:
-    """Starts bot polling."""
+    """Starts bot polling and morning scheduler."""
+    from scheduler import run_morning_scheduler
 
     bot = Bot(token=get_telegram_bot_token())
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
-    await dispatcher.start_polling(bot)
+
+    # Запускаем бота и планировщик параллельно
+    await asyncio.gather(
+        dispatcher.start_polling(bot),
+        run_morning_scheduler(bot),
+    )
 
 
 if __name__ == "__main__":
